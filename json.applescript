@@ -1,51 +1,81 @@
+-- required for NSDateFormatter
+use AppleScript version "2.5" -- macOS 10.11 or later
+use framework "Foundation"
+use scripting additions
+
+
+on encodeDate(value)
+	-- Use NSDateFormatter lib to get the unix time
+	set df to current application's NSDateFormatter's new()
+	df's setDateStyle:(current application's NSDateFormatterFullStyle)
+	df's setTimeStyle:(current application's NSDateFormatterMediumStyle)
+	set theDate to df's dateFromString:(value as text)
+	return theDate's timeIntervalSince1970()
+end encodeDate
+
+
 on encode(value)
-	set type to class of value
-	if type = integer or type = boolean
+	try
+		set type to class of value
+	on error errMsg number msgNumber
+		-- this is an edge case. should return null or to presumptive?
+		error "Unable to Decode variable " & errMsg & msgNumber
+	end try
+	if type = integer or type = boolean then
 		return value as text
-	else if type = text
+	else if type = text then
+		-- invalid text strings are converted to empty
+		if value ­ the text items of value as text then
+			return encodeString("")
+		end if
 		return encodeString(value)
-	else if type = list
+	else if type = list then
 		return encodeList(value)
-	else if type = script
+	else if type = script then
 		return value's toJson()
+	else if type = date then
+		-- extrace the date 
+		return encodeDate(value)
+	else if type = class and (value as text) = "missing value" then
+		return "null"
 	else
-		error "Unknown type " & type
-	end
-end
+		error "Unknown type \"" & type & "\" for value " & value
+	end if
+end encode
 
 
 on encodeList(value_list)
 	set out_list to {}
 	repeat with value in value_list
 		copy encode(value) to end of out_list
-	end
+	end repeat
 	return "[" & join(out_list, ", ") & "]"
-end
+end encodeList
 
 
 on encodeString(value)
 	set rv to ""
 	set codepoints to id of value
-
-	if (class of codepoints) is not list
+	
+	if (class of codepoints) is not list then
 		set codepoints to {codepoints}
-	end
-
+	end if
+	
 	repeat with codepoint in codepoints
 		set codepoint to codepoint as integer
-		if codepoint = 34
+		if codepoint = 34 then
 			set quoted_ch to "\\\""
 		else if codepoint = 92 then
 			set quoted_ch to "\\\\"
-		else if codepoint >= 32 and codepoint < 127
+		else if codepoint ³ 32 and codepoint < 127 then
 			set quoted_ch to character id codepoint
 		else
 			set quoted_ch to "\\u" & hex4(codepoint)
-		end
+		end if
 		set rv to rv & quoted_ch
-	end
+	end repeat
 	return "\"" & rv & "\""
-end
+end encodeString
 
 
 on join(value_list, delimiter)
@@ -54,7 +84,7 @@ on join(value_list, delimiter)
 	set rv to value_list as text
 	set AppleScript's text item delimiters to original_delimiter
 	return rv
-end
+end join
 
 
 on hex4(n)
@@ -63,39 +93,39 @@ on hex4(n)
 	repeat until length of rv = 4
 		set digit to (n mod 16)
 		set n to (n - digit) / 16 as integer
-		set rv to (character (1+digit) of digit_list) & rv
-	end
+		set rv to (character (1 + digit) of digit_list) & rv
+	end repeat
 	return rv
-end
+end hex4
 
 
 on createDictWith(item_pairs)
 	set item_list to {}
-
+	
 	script Dict
 		on setkv(key, value)
 			copy {key, value} to end of item_list
-		end
-
+		end setkv
+		
 		on toJson()
 			set item_strings to {}
 			repeat with kv in item_list
 				set key_str to encodeString(item 1 of kv)
 				set value_str to encode(item 2 of kv)
 				copy key_str & ": " & value_str to end of item_strings
-			end
+			end repeat
 			return "{" & join(item_strings, ", ") & "}"
-		end
-	end
-
+		end toJson
+	end script
+	
 	repeat with pair in item_pairs
 		Dict's setkv(item 1 of pair, item 2 of pair)
-	end
-
+	end repeat
+	
 	return Dict
-end
+end createDictWith
 
 
 on createDict()
 	return createDictWith({})
-end
+end createDict
